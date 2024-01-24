@@ -1,0 +1,49 @@
+---
+# Use this to synchronize templates between your Ansible templates in some directory and a remote directory #
+# Uses never tag, so will only be executed it "template_cleanup" tag is specifically used #
+
+- hosts: ansible_servers
+  gather_facts: no
+
+  tasks:
+
+  - set_fact:
+      remote_templates_path: "templates/path"
+
+  - name: Gather files from templates
+    find:
+      paths: "{{ item }}"
+      file_type: file
+      recurse: no
+    loop:
+      - "/path/local_template_dir"
+      - "/path/local_template_dir2"
+    delegate_to: localhost
+    run_once: yes
+    register: template_files
+    tags: [never, template_cleanup]
+
+  - name: Gather template files 
+    find:
+      paths: "{{ remote_templates_path }}"
+      patterns: "*.cfg"
+    register: remote_cfg_files
+    tags: [never, template_cleanup]
+
+  - set_fact:
+      files_local: "{{ template_files.results | map(attribute='files') | flatten }}"
+    run_once: yes
+    tags: [never, template_cleanup]
+
+  - set_fact:
+      existing_files: "{{ files_local | map(attribute='path') | map('basename') | map('regex_replace', '.j2$', '') | list }}"
+    run_once: yes
+    tags: [never, template_cleanup]
+
+  - name: Remove orphaned cfg files
+    file:
+      path: "{{ remote_templates_path }}/{{ item }}"
+      state: absent
+    loop: "{{ remote_cfg_files.files | map(attribute='path') | map('basename') | difference(existing_files) }}"
+    when: remote_cfg_files.files | length > 0
+    tags: [never, template_cleanup]
